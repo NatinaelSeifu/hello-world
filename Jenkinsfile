@@ -48,10 +48,13 @@ pipeline {
             steps {
                 script {
                     
+                    sh "docker service update --force --image ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ${SERVICE_NAME}"
+                    
                     def updateStatus = sh(script: "docker service inspect ${SERVICE_NAME} --format '{{.UpdateStatus.Message}}'", returnStdout: true).trim()
                     
                     if (updateStatus != "update completed") {
                         echo "Update status is failed. Rolling back the service."
+                        
                         sh "docker service update --rollback ${serviceName}"
                     } else {
                         echo "Update completed successfully."
