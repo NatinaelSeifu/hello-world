@@ -48,7 +48,7 @@ pipeline {
             steps {
                 script {
                     
-                    sh "docker service update --force --image ${DOCKER_IMAGE}:${env.BUILD_NUMBER} ${SERVICE_NAME}"
+                    sh "docker service update --force --image ${IMAGE_NAME}:${env.BUILD_NUMBER} ${SERVICE_NAME}"
                     
                     def updateStatus = sh(script: "docker service inspect ${SERVICE_NAME} --format '{{.UpdateStatus.Message}}'", returnStdout: true).trim()
                     
