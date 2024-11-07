@@ -1,80 +1,50 @@
 pipeline {
-    
-    environment {
-        APP_REPOSITORY_URL = 'https://github.com/NatinaelSeifu/hello-world'
-        DOCKER_TAG = "${BUILD_NUMBER}"
+    agent {
+        docker {
+            image 'node:18'  // The agent runs in a Node.js Docker container to support Next.js
+            args '-v /var/run/docker.sock:/var/run/docker.sock'  // Bind Docker socket to use Docker inside Jenkins
+        }
     }
-    
-    agent any
-        
-            
-        stages {
-            
-            stage('Checkout application repo') {
-                steps {
-                    checkout([$class: 'GitSCM', 
-                      branches: [[name: 'staging']], 
-                      userRemoteConfigs: [[
-                        url: "${APP_REPOSITORY_URL}",
-                        credentialsId: 'dockerhub'
-                      ]]
-                    ])
+    environment {
+        DOCKER_IMAGE = "natinael/hello-world"  // Replace with your Docker registry and image name
+        DOCKER_REGISTRY_CREDENTIALS = 'dockerhub'  // Jenkins ID for Docker Hub credentials
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/NatinaelSeifu/hello-world'  // Check out your repository
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_IMAGE}:${env.BUILD_NUMBER}")
                 }
-            stage('Build Docker Image') {
-                steps {
-                    // Build the Docker image from the Dockerfile in the project root
-                    script {
-                        sh "docker build -t frnt-web-2:latest ."
+            }
+        }
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_REGISTRY_CREDENTIALS) {
+                        docker.image("${DOCKER_IMAGE}:${env.BUILD_NUMBER}").push()
+                       // docker.image("${DOCKER_IMAGE}:${env.BUILD_NUMBER}").push('latest')  // Optional: Push as latest tag
                     }
                 }
             }
-            
-            stage('Tag the image') {
-                steps {
-                    
-                    script {
-                        sh "docker tag frnt-web-2:latest 480053995985.dkr.ecr.us-east-2.amazonaws.com/frnt-web-2:latest"
-                    }
-                }
-            }
-            
-            stage('Login to ECR registry') {
-                steps {
-                    
-                    script {
-                        sh "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 480053995985.dkr.ecr.us-east-2.amazonaws.com"
-                    }
-                }
-            }
-            
-            stage('Push Image to ECR') {
-                steps {
-                    
-                    script {
-                        sh "docker push "
-                    }
-                }
-            }
-            
-            stage('Deploy to ECS Fargate') {
-                steps {
-                    
-                    script {
-                        sh "aws ecs update-service --cluster phase-2-project --service frnt-web-2 --force-new-deployment"
-                    }
-                }
-            }
-            post {
-                success {
-                    echo 'Pipeline succeeded! Your ECS Fargate is built and pushed.'
-                }
-                failure {
-                    echo 'Pipeline failed! Please check the logs for more information.'
+        }
+        stage('Deploy') {
+            steps {
+                sshagent(['server']) {  // Jenkins ID for SSH credentials to the deployment server
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no azureuser@127.179.10.10 "docker service update --force --image ${DOCKER_IMAGE}:${env.BUILD_NUMBER} hello-world"
+                    '''
                 }
             }
         }
     }
-
-
-
-    
+    post {
+        always {
+            cleanWs()  // Clean workspace after each build
+        }
+    }
+}
