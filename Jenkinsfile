@@ -1,50 +1,68 @@
 pipeline {
-    agent {
-        docker {
-            image 'node:18'  // The agent runs in a Node.js Docker container to support Next.js
-            args '-v /var/run/docker.sock:/var/run/docker.sock'  // Bind Docker socket to use Docker inside Jenkins
-        }
-    }
-    environment {
-        DOCKER_IMAGE = "natinael/hello-world"  // Replace with your Docker registry and image name
-        DOCKER_REGISTRY_CREDENTIALS = 'dockerhub'  // Jenkins ID for Docker Hub credentials
-    }
+    agent any
+        
+            environment {
+                IMAGE_NAME = 'natinael/hello-world'
+                DOCKER_TAG = "${BUILD_NUMBER}"
+                SERVICE_NAME = "hello-world"
+               } 
     stages {
-        stage('Checkout') {
+        
+        stage('fetch github code') {
             steps {
-                git 'https://github.com/NatinaelSeifu/hello-world'  // Check out your repository
+                git branch: 'main', url: 'https://github.com/NatinaelSeifu/hello-world.git'
+        
+              }
             }
-        }
+            
         stage('Build Docker Image') {
             steps {
+                // Build the Docker image from the Dockerfile in the project root
                 script {
-                    docker.build("${DOCKER_IMAGE}:${env.BUILD_NUMBER}")
+                    sh "docker build -t ${IMAGE_NAME}:${DOCKER_TAG} ."
                 }
             }
         }
+        
         stage('Push Docker Image') {
             steps {
                 script {
-                    docker.withRegistry('https://index.docker.io/v1/', DOCKER_REGISTRY_CREDENTIALS) {
-                        docker.image("${DOCKER_IMAGE}:${env.BUILD_NUMBER}").push()
-                       // docker.image("${DOCKER_IMAGE}:${env.BUILD_NUMBER}").push('latest')  // Optional: Push as latest tag
+                    // Access the credentials stored in DOCKER_REGISTRY_CREDENTIALS
+                    withCredentials([usernamePassword(credentialsId: 'DOCKER_REGISTRY_CREDENTIALS', 
+                                                      usernameVariable: 'DOCKER_USERNAME', 
+                                                      passwordVariable: 'DOCKER_PASSWORD')]) {
+                        // Perform Docker login using shell command
+                        sh "echo \$DOCKER_PASSWORD | docker login -u \$DOCKER_USERNAME --password-stdin https://index.docker.io/v1/"
+                        
+                        // Push the Docker image
+                        sh "docker push ${IMAGE_NAME}:${DOCKER_TAG}"
+                        
                     }
                 }
             }
         }
-        stage('Deploy') {
+
+
+        
+        stage('Check Docker Service Update') {
             steps {
-                sshagent(['server']) {  // Jenkins ID for SSH credentials to the deployment server
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no azureuser@127.179.10.10 "docker service update --force --image ${DOCKER_IMAGE}:${env.BUILD_NUMBER} hello-world"
-                    '''
+                script {
+                    
+                    def updateStatus = sh(script: "docker service inspect ${SERVICE_NAME} --format '{{.UpdateStatus.Message}}'", returnStdout: true).trim()
+                    
+                    if (updateStatus != "update completed") {
+                        echo "Update status is failed. Rolling back the service."
+                        sh "docker service update --rollback ${serviceName}"
+                    } else {
+                        echo "Update completed successfully."
+                    }
                 }
             }
         }
+
+        
     }
-    post {
-        always {
-            cleanWs()  // Clean workspace after each build
-        }
-    }
+
 }
+
+    
