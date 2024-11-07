@@ -55,7 +55,7 @@ pipeline {
                     if (updateStatus != "update completed") {
                         echo "Update status is failed. Rolling back the service."
                         
-                        sh "docker service update --rollback ${serviceName}"
+                        sh "docker service update --rollback ${SERVICE_NAME}"
                     } else {
                         echo "Update completed successfully."
                     }
