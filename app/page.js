@@ -6,6 +6,7 @@ export default function Home() {
 
     <h1>Hallo Welt</h1>
     <p> It means Hello world</p>
+    <p> Wirklich?</p>
     </>
   );
 }
